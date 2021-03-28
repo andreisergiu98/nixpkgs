@@ -1,12 +1,25 @@
-{ lib, stdenv, fetchurl, mono, makeWrapper, curl, icu60, openssl, zlib }:
+{ lib, stdenv, fetchurl, dotnetCorePackages, makeWrapper, curl, icu60, openssl, zlib, nixosTests }:
 
-stdenv.mkDerivation rec {
+let
+  suffix = {
+    x86_64-linux = "LinuxAMDx64";
+    aarch64-linux = "LinuxARM64";
+    x86_64-darwin = "macOS";
+  }."${stdenv.hostPlatform.system}" or (throw "Unsupported system: ${stdenv.hostPlatform.system}");
+
+  hash = {
+    LinuxAMDx64_hash = "sha256-seM6K/Wa7qIDKzPd0o+xR28vJyh3ku/3/57Sq9u396A=";
+    LinuxARM64_hash = "sha256-GQvTL6LAmHqfa5wjN+b6AbvuUwECixXnv59Ou8+0V9Y=";
+    macOS_hash = "sha256-o3jIamRJB30ndEsZztmCJk68C9mcasTBbsORZ3RUEEg=";
+  }."${suffix}_hash";
+
+in stdenv.mkDerivation rec {
   pname = "jackett";
-  version = "0.17.865";
+  version = "0.17.946";
 
   src = fetchurl {
-    url = "https://github.com/Jackett/Jackett/releases/download/v${version}/Jackett.Binaries.Mono.tar.gz";
-    sha256 = "sha256-kjrch++WncedVkRm05RifUGEYlc5NFAss/E6fgPZWyQ=";
+    url = "https://github.com/Jackett/Jackett/releases/download/v${version}/Jackett.Binaries.${suffix}.tar.gz";
+    sha256 = hash;
   };
 
   nativeBuildInputs = [ makeWrapper ];
@@ -14,17 +27,21 @@ stdenv.mkDerivation rec {
   installPhase = ''
     mkdir -p $out/{bin,share/${pname}-${version}}
     cp -r * $out/share/${pname}-${version}
-
-    makeWrapper "${mono}/bin/mono" $out/bin/Jackett \
-      --add-flags "$out/share/${pname}-${version}/JackettConsole.exe" \
+    makeWrapper "${dotnetCorePackages.netcore_3_1}/bin/dotnet" $out/bin/Jackett \
+      --add-flags "$out/share/${pname}-${version}/jackett.dll" \
       --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ curl icu60 openssl zlib ]}
   '';
+
+  passthru = {
+    updateScript = ./update.sh;
+    tests.smoke-test = nixosTests.jackett;
+  };
 
   meta = with lib; {
     description = "API Support for your favorite torrent trackers";
     homepage = "https://github.com/Jackett/Jackett/";
     license = licenses.gpl2Only;
     maintainers = with maintainers; [ edwtjo nyanloutre purcell ];
-    platforms = platforms.all;
+    platforms = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" ];
   };
 }
